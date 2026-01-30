@@ -198,7 +198,7 @@ socket.on('new_message', m => {
     msg(m.senderName, m.text, m.avatarUrl);
 });
 
-socket.on('private_message', m=> msg(m.avatarUrl+'(خاص) '+m.fromName,m.text,'#d63384'));
+socket.on('private_message', m=> msg(m.avatarUrl,'(رسالة خاصة من ) '+m.fromName,m.text,'#d63384'));
 
 // ----- رسائل النظام -----
 
