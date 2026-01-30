@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="ar">
+<head>
+<meta charset="utf-8"/>
+<title>دردشة شبيهة بـ Paltalk (MVP) - نسخة محسنة</title>
+<style>
+  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin:0; background:#f4f6f8; }
+  .container { max-width: 1000px; height:500px; margin: 20px auto; background:#fff; border-radius:12px; padding:20px; box-shadow:0 4px 15px rgba(0,0,0,0.1); }
+  h2 { text-align:center; color:#333; }
+  
+  /* واجهة تسجيل الدخول */
+  #login { display:flex; flex-direction:column; align-items:center; gap:12px; margin-top:20px; }
+  #login input { padding:8px; width:200px; border-radius:6px; border:1px solid #ccc; }
+  #login button { padding:8px 16px; border:none; border-radius:6px; background:#007bff; color:white; cursor:pointer; transition:0.3s; }
+  #login button:hover { background:#0056b3; }
+
+  /* واجهة الدردشة */
+  #chat { display:none; margin-top:12px; }
+  #chat-controls { display:flex; gap:12px; margin-bottom:12px; }
+  #chat-controls input { padding:6px; border-radius:6px; border:1px solid #ccc; flex:1; }
+  #chat-controls button { padding:6px 12px; border:none; border-radius:6px; background:#28a745; color:white; cursor:pointer; }
+  #chat-controls button:hover { background:#1e7e34; }
+
+  #main { display:flex; gap:12px; }
+  #messages { flex:2; height:350px; overflow:auto; border:1px solid #ccc; padding:10px; border-radius:8px; background:#fdfdfd; }
+  #users-panel { width:250px; display:flex; flex-direction:column; gap:12px; }
+
+  #users, #all-users { height:250px; overflow:auto; border:1px solid #ddd; border-radius:6px; padding:6px; background:#fafafa; }
+  #users div, #all-users div { padding:4px 6px; cursor:pointer; border-radius:4px; }
+  #users div:hover, #all-users div:hover { background:#e1f5fe; }
+
+  .sys { color:#888; font-size:0.85em; font-style:italic; margin-bottom:4px; }
+
+  #msg-input { display:flex; margin-top:8px; gap:6px; }
+  #msg { flex:1; padding:6px; border-radius:6px; border:1px solid #ccc; }
+  #sendBtn { padding:6px 12px; border:none; border-radius:6px; background:#007bff; color:white; cursor:pointer; }
+  #sendBtn:hover { background:#0056b3; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h2>تجربة دردشة شبيهة بـ Paltalk - نسخة محسنة</h2>
+
+  <!-- تسجيل الدخول -->
+  <div id="login">
+    <input id="username" placeholder="اسم المستخدم"/>
+    <input id="password" type="password" placeholder="كلمة المرور"/>
+    <button id="loginBtn">تسجيل الدخول</button>
+      <p>ليس لديك حساب؟ <button id="signupBtn">إنشاء حساب</button></p>
+  </div>
+<div id="signup" style="display:none;">
+  <h2>إنشاء حساب جديد</h2>
+  <input id="newUsername" placeholder="اسم المستخدم" />
+  <input id="email" placeholder="البريد الإلكتروني" />
+  <input id="newPassword" type="password" placeholder="كلمة المرور" />
+  <select id="gender">
+    <option value="male">ذكر</option>
+    <option value="female">أنثى</option>
+  </select>
+  <input id="avatar" placeholder="رابط صورة الأفتار (اختياري)" />
+  <button id="createAccountBtn">إنشاء الحساب</button>
+  <button id="backToLoginBtn">رجوع</button>
+</div>
+  <!-- واجهة الدردشة -->
+  <div id="chat">
+  <div id="roomControls" style="display:none; margin-bottom:8px;">
+      <strong>إدارة الغرفة 👑</strong><br>
+      <button id="lockRoomBtn">🔒 قفل الغرفة</button>
+      <button id="unlockRoomBtn">🔓 فتح الغرفة</button>
+    </div>
+    <div id="chat-controls">
+      <input id="room" placeholder="اسم الغرفة (مثال: lobby)"/>
+      <button id="createBtn">انشئ غرفة</button>
+      <button id="joinBtn">انضم للغرفة</button>
+      <!-- زر الخروج سيظهر بعد الانضمام -->
+<button id="leaveBtn" style="display:none; background:#dc3545;">خروج من الغرفة</button>
+
+    </div>
+
+    <div id="main">
+      <div style="flex:2; display:flex; flex-direction:column;">
+        <div id="messages"></div>
+        <div id="msg-input">
+          <input id="msg" placeholder="نص الرسالة"/>
+          <button id="sendBtn">أرسل</button>
+        </div>
+      </div>
+
+      <div id="users-panel">
+        <h4>الأعضاء في الغرفة</h4>
+        <div id="users"></div>
+
+      <!--  <h4>جميع المستخدمين</h4>
+        <div id="all-users"></div>-->
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+let socket; // متغير عالمي
+let myUsername;
+let currentRoom = null;
+let roomOwner = null;
+// عرض/إخفاء واجهة إنشاء حساب
+document.getElementById('signupBtn').onclick = () => {
+  document.getElementById('login').style.display = 'none';
+  document.getElementById('signup').style.display = 'block';
+};
+
+document.getElementById('backToLoginBtn').onclick = () => {
+  document.getElementById('signup').style.display = 'none';
+  document.getElementById('login').style.display = 'block';
+};
+
+// إنشاء حساب جديد
+document.getElementById('createAccountBtn').onclick = async () => {
+  const username = document.getElementById('newUsername').value.trim();
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('newPassword').value.trim();
+  const gender = document.getElementById('gender').value;
+  const avatar = document.getElementById('avatar').value.trim();
+
+  if (!username || !email || !password) return alert('أدخل جميع البيانات');
+
+  const res = await fetch('/create-user', {
+    method: 'POST',
+    headers: { 'Content-Type':'application/json' },
+    body: JSON.stringify({ username, email, password, gender, avatar })
+  });
+  const data = await res.json();
+
+  if (data.success) {
+    alert('تم إنشاء الحساب! يمكنك تسجيل الدخول');
+    document.getElementById('signup').style.display = 'none';
+    document.getElementById('login').style.display = 'block';
+  } else {
+    alert('اسم المستخدم أو البريد مستخدم مسبقًا');
+  }
+};
+
+// تسجيل الدخول
+document.getElementById('loginBtn').onclick = async () => {
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value.trim();
+  if (!username || !password) return alert('أدخل اسم مستخدم وكلمة المرور');
+
+  try {
+    const res = await fetch('/login', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+
+    if (!data.success) return alert('اسم المستخدم أو كلمة المرور غير صحيحة');
+
+    myUsername = data.user.username;
+
+    // حفظ اسم المستخدم في الجلسة
+    sessionStorage.setItem('myUsername', myUsername);
+
+    // إنشاء الاتصال بسيرفر Socket.IO
+    socket = io('/', { auth: { username: myUsername } });
+
+    // عند الاتصال
+    socket.on('connect', () => {
+      document.getElementById('login').style.display = 'none';
+      document.getElementById('chat').style.display = 'block';
+      addSys('متصل بالخادم (id=' + socket.id + ')');
+    });
+
+    // استقبال الانضمام للغرفة مع قائمة الأعضاء
+    socket.on('room_joined', (data) => {
+      addSys('انضممت الغرفة ' + data.roomId);
+	  const room = document.getElementById('room').value;
+messagesEl.innerHTML = `${myUsername} اهلا و سهلا بك في الغرفة ${room}`;
+
+      usersEl.innerHTML = '';
+
+      if (data.members && data.members.length) {
+        data.members.forEach(u => addUser(u.userId, u.username));
+      }
+    });
+
+ socket.on('room_locked', () => addSys('🔒 تم قفل الغرفة'));
+    socket.on('room_unlocked', () => addSys('🔓 تم فتح الغرفة'));
+    socket.on('kicked', () => { alert('تم طردك من الغرفة'); leaveBtn.click(); });
+	
+    socket.on('user_joined', (u) => {
+      addSys(u.username + ' دخل الغرفة');
+      addUser(u.userId, u.username);
+    });
+
+    socket.on('user_left', (u) => {
+      addSys(u.username + ' غادر الغرفة');
+      removeUser(u.userId);
+    });
+
+    socket.on('new_message', (m) => {
+      addMsg(m.senderName || m.senderId, m.text);
+    });
+
+    socket.on('private_message', (m) => {
+      const sender = m.fromId === socket.id
+        ? `${myUsername} (رسالة خاصة)`
+        : `${m.fromName} (رسالة خاصة من)`;
+
+      const d = document.createElement('div');
+      d.textContent = `${sender}: ${m.text}`;
+      d.style.color = '#d63384';
+      d.style.fontStyle = 'italic';
+      messagesEl.appendChild(d);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    });
+
+  } catch (err) {
+    console.error(err);
+    alert('حدث خطأ أثناء تسجيل الدخول');
+  }
+};
+const createBtn = document.getElementById('createBtn');
+const joinBtn = document.getElementById('joinBtn');
+const leaveBtn = document.getElementById('leaveBtn');
+
+// عند الانضمام للغرفة
+document.getElementById('joinBtn').onclick = () => {
+  const room = document.getElementById('room').value;
+  if (!room) return alert('أدخل اسم الغرفة');
+  socket.emit('join_room', { roomId: room });
+
+  // إخفاء أزرار الانضمام/إنشاء
+  createBtn.style.display = 'none';
+  joinBtn.style.display = 'none';
+
+  // إظهار زر الخروج
+  leaveBtn.style.display = 'inline-block';
+};
+
+// عند إنشاء الغرفة
+document.getElementById('createBtn').onclick = () => {
+  const name = document.getElementById('room').value || ('room_' + Date.now());
+  socket.emit('create_room', { name });
+
+  createBtn.style.display = 'none';
+  joinBtn.style.display = 'none';
+  leaveBtn.style.display = 'inline-block';
+};
+
+// عند الخروج من الغرفة
+leaveBtn.onclick = () => {
+  const room = document.getElementById('room').value;
+  if (!room) return;
+
+  socket.emit('leave_room', { roomId: room });
+
+  addSys('غادرت الغرفة ' + room);
+  
+  // إظهار أزرار الانضمام/إنشاء مجددًا
+  createBtn.style.display = 'inline-block';
+  joinBtn.style.display = 'inline-block';
+
+  // إخفاء زر الخروج
+  leaveBtn.style.display = 'none';
+
+  // مسح الرسائل
+  messagesEl.innerHTML = '';
+  usersEl.innerHTML = '';
+};
+
+// إرسال الرسائل العامة
+const messagesEl = document.getElementById('messages');
+const usersEl = document.getElementById('users');
+
+document.getElementById('sendBtn').onclick = sendMessage;
+document.getElementById('msg').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') sendMessage();
+});
+
+function sendMessage() {
+  const room = document.getElementById('room').value;
+  const txt = document.getElementById('msg').value.trim();
+  if (!room) return alert('انضم لغرفة أولاً');
+  if (!txt) return;
+  socket.emit('send_message', { roomId: room, text: txt });
+  document.getElementById('msg').value = '';
+}
+
+// إضافة رسالة عامة
+function addMsg(sender, text) {
+  const d = document.createElement('div');
+  d.textContent = sender + ': ' + text;
+  messagesEl.appendChild(d);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+// إضافة رسالة نظام
+function addSys(text) {
+  const d = document.createElement('div');
+  d.textContent = text;
+  d.className = 'sys';
+  messagesEl.appendChild(d);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+// إضافة مستخدم للقائمة
+function addUser(id, name) {
+  const el = document.createElement('div');
+  el.id = 'user_' + id;
+  el.textContent = name + ' (' + id.slice(0,6) + ')';
+  el.style.cursor = 'pointer';
+  el.style.padding = '4px 6px';
+  el.style.borderRadius = '4px';
+  el.onmouseover = () => el.style.background = '#e1f5fe';
+  el.onmouseout = () => el.style.background = '';
+  el.onclick = () => {
+    const text = prompt('أدخل رسالة خاصة إلى ' + name);
+    if (text) socket.emit('private_message', { toSocketId: id, text });
+  };
+  usersEl.appendChild(el);
+}
+
+// إزالة مستخدم من القائمة
+function removeUser(id) {
+  const el = document.getElementById('user_' + id);
+  if (el) el.remove();
+}
+
+</script>
+</body>
+</html>

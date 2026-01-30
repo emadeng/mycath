@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="ar">
+<head>
+<meta charset="utf-8">
+<title>غرفة الدردشة</title>
+<style>
+body{margin:0;font-family:'Segoe UI',sans-serif;background:#f4f6f8;}
+#roomContainer{display:flex;height:100vh;flex-direction:column;}
+#taskbar{background:linear-gradient(135deg,#1976d2,#0d47a1);color:#fff;padding:10px 20px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 8px rgba(0,0,0,0.2);}
+#taskbar .left-controls,#taskbar .right-controls{display:flex;align-items:center;gap:10px;}
+#taskbar .room-title{font-size:18px;font-weight:bold;}
+#taskbar button{background:#ffffff33;border:none;border-radius:16px;padding:6px 12px;color:#fff;cursor:pointer;font-weight:bold;transition:0.2s;}
+#taskbar button:hover{background:#ffffff66;}
+#taskbar .owner-controls{display:flex;align-items:center;gap:8px;}
+#taskbar .owner-controls input{padding:5px 10px;border-radius:16px;border:none;outline:none;}
+#roomContent{display:flex;flex:1;overflow:hidden;}
+#users{width:220px;background:#fff;border-left:1px solid #ddd;padding:10px;box-shadow:0 0 6px rgba(0,0,0,0.05);overflow-y:auto;}
+#users div{padding:6px 8px;margin-bottom:4px;border-radius:6px;cursor:pointer;transition:0.2s;display:flex;justify-content:space-between;align-items:center;}
+#users div:hover{background:#f0f0f0;}
+#messagesContainer{flex:1;display:flex;flex-direction:column;padding:10px;background:#fdfdfd;overflow:hidden;}
+#messages{flex:1;overflow-y:auto;padding:10px;border-radius:8px;background:#fff;border:1px solid #ccc;}
+#msg-input{display:flex;gap:6px;margin-top:6px;}
+#msg{flex:1;padding:6px 10px;border-radius:6px;border:1px solid #ccc;outline:none;}
+#sendBtn{background:#1976d2;color:#fff;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;}
+#sendBtn:hover{ background:#0d47a1; }
+.sys{color:#888;font-size:0.85em;font-style:italic;margin-bottom:4px;}
+.mic-status{font-size:0.9em;}
+.no-click {
+    pointer-events: none;
+    user-select: none;
+}
+#messages, #users {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.welcome-text {
+    font-size: 16px;
+    font-weight: bold;
+   // background: linear-gradient(90deg, #00c6ff, #0072ff);
+   // -webkit-background-clip: text;
+ //   -webkit-text-fill-color: transparent;
+color:#0072ff;
+}
+
+.usernamein {
+   // background: linear-gradient(90deg, #f7971e, #ffd200);
+    //-webkit-background-clip: text;
+//    -webkit-text-fill-color: transparent;
+color:#00078;
+}
+</style>
+</head>
+<body>
+<div id="roomContainer">
+  <div id="taskbar">
+    <div class="left-controls">
+      <div class="room-title">الغرفة: <span id="roomName"></span></div>
+      <div class="owner-controls" style="display:none;">
+        <input type="text" id="roomPass" placeholder="كلمة المرور">
+        <button id="lockBtn">🔒 قفل الغرفة</button>
+        <button id="unlockBtn" style="display:none;">🔓 فتح الغرفة</button>
+        <button id="modsBtn">👑 مشرفين</button>
+        <button id="pinnedBtn">📌 غرف مثبتة</button>
+       <input type="text" id="newMessage" placeholder="اكتب رسالة جديدة">
+<button onclick="addMessage()">إضافة الرسالة</button>
+      </div>
+    </div>
+    <div class="right-controls">
+      <button id="micBtn">🔊 مايك</button>
+      <button id="statusBtn">🟢 متصل</button>
+      <button onclick="leave()">خروج</button>
+    </div>
+  </div>
+
+  <div id="roomContent">
+    <div id="messagesContainer">
+      <div id="messages"></div>
+      <div id="msg-input">
+        <input id="msg" placeholder="اكتب رسالتك هنا..."/>
+        <button id="sendBtn">أرسل</button>
+      </div>
+    </div>
+    <div id="users"></div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const username = sessionStorage.getItem('myUsername');
+const room = sessionStorage.getItem('joinRoom');
+const roomPassword = sessionStorage.getItem('roomPassword') || null;
+if(!username || !room) location.href='rooms.html';
+document.getElementById('roomName').textContent = room;
+
+const socket = io('/', { auth:{ username }, reconnection:false });
+const messages = document.getElementById('messages');
+const users = document.getElementById('users');
+
+const ownerControls = document.querySelector('.owner-controls');
+const roomPassInput = document.getElementById('roomPass');
+const lockBtn = document.getElementById('lockBtn');
+const unlockBtn = document.getElementById('unlockBtn');
+
+let isOwner = false;
+let micOn = true;
+
+  // مصفوفة الرسائل
+    let messages_we = JSON.parse(localStorage.getItem("messages_we")) || [
+    "أهلاً وسهلاً بك في غرفتنا !"
+];
+
+
+
+    // دالة لاختيار رسالة عشوائية
+    function getRandomMessage() {
+        const randomIndex = Math.floor(Math.random() * messages_we .length);
+        return messages_we[randomIndex];
+    }
+
+// ----- انضمام الغرفة مرة واحدة -----
+if(!window.joinedRoom){
+  socket.emit('join_room',{ roomId: room, password: roomPassword });
+  window.joinedRoom = true;
+}
+
+socket.once('room_joined', data => {
+  if(data.owner === username){
+    isOwner = true;
+    ownerControls.style.display = 'inline-flex';
+    sessionStorage.setItem('owner', data.owner);
+
+    if(data.locked){
+      roomPassInput.style.display='none';
+      lockBtn.style.display='none';
+      unlockBtn.style.display='inline-block';
+    } else {
+      roomPassInput.style.display='inline-flex';
+      lockBtn.style.display='inline-block';
+      unlockBtn.style.display='none';
+    }
+  }
+
+  users.innerHTML = '';
+  data.members.forEach(u => addUser(u.socketId, u.username,u.username == data.owner ,  u.micOn));
+
+
+ sys( getRandomMessage() +username);
+});
+
+socket.once('error_msg', msg => { alert(msg); location.href='rooms.html'; });
+
+// ----- مستخدم دخل -----
+
+socket.on('user_joined', u => {
+  // فقط للمستخدمين في نفس الغرفة
+  if (u.roomId !== room) return;
+
+  // إضافة المستخدم إذا لم يكن موجود مسبقًا
+  if (!document.getElementById('u_' + u.userId)) {
+    addUser(u.userId, u.username, u.isOwner, u.micOn);
+    sys(u.username + ' دخل الغرفة');
+sys(`
+    <span>${room}: </span>
+  <span class="welcome-text">
+    ${getRandomMessage()} 
+    <span class="usernamein">${username}</span>
+  </span>
+`);
+
+  }
+});
+
+// ----- مستخدم خرج -----
+socket.on('user_left', u => {
+  if (u.roomId === room) {
+  removeUser(u.userId);
+  //  addUser(u.userId, u.username, u.isOwner,u.micOn);
+  sys(u.username + ' خرج');
+}else{
+  removeUser(u.userId);
+}
+});
+
+
+// ----- تحديث حالة المايك -----
+socket.on('user_mic_status', ({ socketId, micOn })=>{
+  const userDiv = document.getElementById('u_'+socketId);
+  if(userDiv){
+    const micSpan = userDiv.querySelector('.mic-status');
+    if(micSpan) micSpan.textContent = micOn ? '🔊' : '🔇';
+  }
+});
+
+// ----- رسائل -----
+//socket.on('new_message', m=> msg(m.senderName,m.text));
+socket.on('new_message', m => {
+    msg(m.senderName, m.text, m.avatarUrl);
+});
+
+socket.on('private_message', m=> msg('(خاص) '+m.fromName,m.text,'#d63384'));
+
+// ----- رسائل النظام -----
+
+function sys(text){
+  const d = document.createElement('div');
+  d.innerHTML = text;   // ✅ هنا الحل
+  d.className = 'sys';
+  messages.appendChild(d);
+  messages.scrollTop = messages.scrollHeight;
+}
+/*
+function msg(sender,text,color){
+  const d=document.createElement('div');
+  d.textContent = sender+': '+text;
+  if(color) d.style.color=color;
+  messages.appendChild(d);
+  messages.scrollTop = messages.scrollHeight;
+}
+*/
+function msg(sender, text, avatarUrl, color) {
+    const d = document.createElement('div');
+    d.className = 'message-item';
+    d.style.display = 'flex';
+    d.style.alignItems = 'center';
+    d.style.marginBottom = '6px';
+
+    // صورة البروفايل
+    const img = document.createElement('img');
+    img.src = avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(sender)}&background=random&color=#fffff&rounded=true`;
+    img.style.width = '42px';
+    img.style.height = '42px';
+    img.style.borderRadius = '50%';
+    img.style.marginRight = '8px';
+
+    // نص الرسالة
+    const textDiv = document.createElement('div');
+    textDiv.textContent = sender + ': ' + text;
+    if (color) textDiv.style.color = color;
+
+    d.appendChild(img);
+    d.appendChild(textDiv);
+    messages.appendChild(d);
+    messages.scrollTop = messages.scrollHeight;
+}
+
+// ----- إدارة المستخدمين -----
+function addUser(id, name, isOwner = false, mic = true) {
+  if (document.getElementById('u_' + id)) return; // منع التكرار
+
+  const d = document.createElement('div');
+  d.id = 'u_' + id;
+  d.className = 'user-item';
+
+  d.innerHTML = `
+    <span class="username">${isOwner ? '👑' : '👤'} ${name}</span>
+    <span class="mic-status">${mic ? '🔊' : '🔇'}</span>
+  `;
+
+  d.onclick = () => {
+    if (id === socket.id) return;
+    const t = prompt('رسالة خاصة لـ ' + name);
+    if (t) socket.emit('private_message', { toSocketId: id, text: t });
+  };
+
+  users.appendChild(d);
+}
+
+function removeUser(id){ const d=document.getElementById('u_'+id); if(d) d.remove(); }
+
+// ----- إرسال رسالة -----
+function sendMsg(){
+  const t=document.getElementById('msg').value.trim();
+  if(!t) return;
+  socket.emit('send_message',{ roomId:room, text:t });
+  document.getElementById('msg').value='';
+}
+document.getElementById('msg').addEventListener('keydown',(e)=>{ if(e.key==='Enter') sendMsg(); });
+document.getElementById('sendBtn').addEventListener('click', sendMsg);
+
+// ----- مغادرة الغرفة -----
+function leave(){
+  socket.emit('leave_room',{ roomId:room });
+  socket.disconnect();
+  location.href='rooms.html';
+}
+
+// ----- Owner Controls -----
+lockBtn.onclick=()=>{ const pass=roomPassInput.value.trim(); if(!pass){ alert('❌ أدخل كلمة المرور'); return;} socket.emit('lock_room',{roomId:room,password:pass}); roomPassInput.value=''; };
+unlockBtn.onclick=()=>{ socket.emit('unlock_room',{roomId:room}); };
+
+// ----- زر المايك -----
+document.getElementById('micBtn').onclick=()=>{
+  micOn=!micOn;
+  document.getElementById('micBtn').textContent=micOn?'🔊 مايك':'🔇 صامت';
+  socket.emit('mic_status',{roomId:room,micOn});
+}
+
+// ----- أزرار Taskbar -----
+document.getElementById('statusBtn').onclick=()=>alert('🟢 أنت متصل');
+document.getElementById('modsBtn').onclick=()=>alert('👑 قائمة المشرفين');
+document.getElementById('pinnedBtn').onclick=()=>alert('📌 الغرف المثبتة');
+
+ function addMessage() {
+    const input = document.getElementById("newMessage");
+    const newMsg = input.value.trim();
+
+    if (newMsg !== "") {
+        messages_we.push(newMsg);
+
+        // 💾 حفظ دائم
+        localStorage.setItem(
+            "messages_we",
+            JSON.stringify(messages_we)
+        );
+
+        alert("تمت إضافة الرسالة!");
+        input.value = "";
+    } else {
+        alert("الرجاء كتابة رسالة قبل الإضافة!");
+    }
+}
+
+function blockLeftClick(el) {
+    el.addEventListener("mousedown", function(e) {
+        if (e.button === 0) { // زر أيسر
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+        }
+    });
+}
+blockLeftClick(document.getElementById("users"));
+blockLeftClick(document.getElementById("messages"));
+
+</script>
+</body>
+</html>

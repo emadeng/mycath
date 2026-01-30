@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ar">
+<head>
+<meta charset="utf-8">
+<title>قائمة الغرف</title>
+<style>
+body{ font-family:'Segoe UI',sans-serif; margin:0; background:#f4f6f8; }
+.header{
+  background: linear-gradient(135deg,#1976d2,#0d47a1);
+  display: flex;
+  color: #fff;
+  padding: 12px 20px;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+}
+
+.header h3{
+  margin: 0;
+}
+
+/* حاوية الأزرار */
+.header .actions{
+  display: flex;
+  align-items: center;
+  gap: 8px; /* المسافة بين الأزرار */
+}
+
+.header button{
+  background: #ffffff33;
+  border: none;
+  color: #fff;
+  padding: 6px 14px;
+  border-radius: 20px;
+  cursor: pointer;
+  margin: 0;
+}
+
+.container{ max-width:900px; margin:20px auto; padding:10px; }
+.room-card{ background:#fff; border-radius:12px; padding:14px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 4px 12px rgba(0,0,0,0.08); transition:0.3s; }
+.room-card:hover{ transform:translateY(-2px); }
+.room-info{ display:flex; align-items:center; gap:12px; }
+.room-icon{ font-size:32px; }
+.room-name{ font-size:18px; font-weight:bold; }
+.room-meta{ font-size:12px; color:#666; }
+.join-btn{ background:#1976d2; color:#fff; border:none; padding:6px 18px; border-radius:20px; cursor:pointer; }
+.join-btn:hover{ background:#0d47a1; }
+.locked{ color:#d32f2f; }
+.open{ color:#2e7d32; }
+.create-room{ background:#fff; padding:14px; border-radius:12px; display:flex; gap:10px; margin-bottom:15px; box-shadow:0 4px 12px rgba(0,0,0,.08); }
+.create-room input{ flex:1; padding:8px 12px; border-radius:20px; border:1px solid #ccc; outline:none; }
+.create-room button{ background:#1976d2; color:#fff; border:none; padding:8px 20px; border-radius:20px; cursor:pointer; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h3>💬<span id="user"></span></h3>
+   <div class="actions">
+  <button onclick="goLobby()">Lobby</button>
+  <button onclick="logout()">تسجيل الخروج</button>
+  </div>
+</div>
+
+<div class="create-room" id="createrooms">
+  <input id="roomName" placeholder="اسم الغرفة">
+  <input id="roomPass" placeholder="كلمة مرور (اختياري)">
+  <button onclick="createRoom()">➕ إنشاء</button>
+</div>
+
+<div class="container" id="roomsList">
+  <p>جاري تحميل الغرف...</p>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const username=sessionStorage.getItem('myUsername');
+document.getElementById('user').innerHTML= username + " اهلا و سهلا بك ";
+if(!username) location.href='login.html';
+
+const socket=io('/',{ auth:{ username } });
+const roomsList=document.getElementById('roomsList');
+
+socket.emit('get_rooms');
+
+socket.on('rooms_list', rooms=>{
+  roomsList.innerHTML='';
+    if(rooms.length===0){ roomsList.innerHTML='<p>لا توجد غرف حالياً</p>'; return; }
+  rooms.forEach(room=>{
+	    if(room.owner===username){ document.getElementById('createrooms').style.display ='none'; }
+
+    const card=document.createElement('div');
+    card.className='room-card';
+    card.innerHTML=`
+      <div class="room-info">
+        <div class="room-icon">🎧</div>
+        <div>
+          <div class="room-name">${room.name}${room.locked?'🔒':''}</div>
+          <div class="room-meta">👥 ${room.count} | 👑 ${room.owner} | <span class="${room.locked?'locked':'open'}">${room.locked?'مقفلة':'مفتوحة'}</span></div>
+        </div>
+      </div>
+      <button class="join-btn">دخول</button>
+    `;
+   card.querySelector('.join-btn').onclick = () => {
+ let password = null;
+ if(room.locked){
+   password = prompt('🔒 أدخل كلمة مرور الغرفة');
+   if(password === null) return; // إلغاء
+ }
+ sessionStorage.setItem('joinRoom', room.name);
+ sessionStorage.setItem('roomPassword', password || '');
+  
+  // أرسل كلمة المرور مع join_room
+ socket.emit('join_room', { roomId: room.name, password: password });
+// استمع لنجاح أو خطأ الدخول
+  socket.once('room_joined', () => {
+    location.href='room.html'; // فقط عند النجاح
+  });
+
+  socket.once('error_msg', msg => {
+    alert(msg); // رسالة الخطأ
+  });
+//location.href='room.html';
+    };
+    roomsList.appendChild(card);
+  });
+});
+
+function createRoom(){
+  const name=document.getElementById('roomName').value.trim();
+  const password=document.getElementById('roomPass').value.trim();
+  if(!name){ alert('❌ أدخل اسم الغرفة'); return; }
+  socket.emit('create_room',{ roomId:name, password: password||null });
+  document.getElementById('roomName').value='';
+  document.getElementById('roomPass').value='';
+}
+
+function goLobby(){ location.href='lobby.html'; }
+function logout(){ location.href='logout.html'; }
+</script>
+</body>
+</html>

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ar">
+<head>
+<meta charset="utf-8"/>
+<title>الغرفة / الدردشة</title>
+<style>
+  body{ font-family:'Segoe UI',sans-serif; margin:0; background:#f4f6f8; }
+  .container{ max-width:1000px; margin:20px auto; background:#fff; border-radius:12px; padding:20px; box-shadow:0 4px 15px rgba(0,0,0,0.1); }
+  #chat-controls input{ padding:6px; border-radius:6px; border:1px solid #ccc; flex:1; }
+  #chat-controls button, #sendBtn, #leaveBtn, #lockRoomBtn, #unlockRoomBtn{ cursor:pointer; border:none; border-radius:6px; color:white; padding:6px 12px; }
+  #chat-controls button{ background:#28a745; } #chat-controls button:hover{ background:#1e7e34; }
+  #sendBtn{ background:#007bff; } #sendBtn:hover{ background:#0056b3; }
+  #leaveBtn{ background:#dc3545; } #leaveBtn:hover{ background:#b02a37; }
+  #main{ display:flex; gap:12px; }
+  #messages{ flex:2; height:350px; overflow:auto; border:1px solid #ccc; padding:10px; border-radius:8px; background:#fdfdfd; }
+  #users-panel{ width:250px; display:flex; flex-direction:column; gap:12px; }
+  #users{ height:250px; overflow:auto; border:1px solid #ddd; border-radius:6px; padding:6px; background:#fafafa; }
+  #users div:hover{ background:#e1f5fe; }
+  .sys{ color:#888; font-size:0.85em; font-style:italic; margin-bottom:4px; }
+  #msg-input{ display:flex; margin-top:8px; gap:6px; }
+  #msg{ flex:1; padding:6px; border-radius:6px; border:1px solid #ccc; }
+</style>
+</head>
+<body>
+<div class="container">
+<h2>دردشة الغرفة</h2>
+
+<div id="roomControls" style="display:none; margin-bottom:8px;">
+  <strong>إدارة الغرفة 👑</strong><br>
+  <button id="lockRoomBtn">🔒 قفل الغرفة</button>
+  <button id="unlockRoomBtn">🔓 فتح الغرفة</button>
+</div>
+
+<div id="chat-controls">
+  <input id="room" placeholder="اسم الغرفة (مثال: lobby)"/>
+  <button id="createBtn">انشئ غرفة</button>
+  <button id="joinBtn">انضم للغرفة</button>
+  <button id="leaveBtn" style="display:none;">خروج من الغرفة</button>
+</div>
+
+<div id="main">
+  <div style="flex:2; display:flex; flex-direction:column;">
+    <div id="messages"></div>
+    <div id="msg-input">
+      <input id="msg" placeholder="نص الرسالة"/>
+      <button id="sendBtn">أرسل</button>
+    </div>
+  </div>
+
+  <div id="users-panel">
+    <h4>الأعضاء في الغرفة</h4>
+    <div id="users"></div>
+  </div>
+</div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+let socket, myUsername=sessionStorage.getItem('myUsername'), currentRoom=null, roomOwner=null;
+if(!myUsername) window.location.href='login.html';
+
+const messagesEl=document.getElementById('messages');
+const usersEl=document.getElementById('users');
+const createBtn=document.getElementById('createBtn');
+const joinBtn=document.getElementById('joinBtn');
+const leaveBtn=document.getElementById('leaveBtn');
+
+// إنشاء الاتصال
+socket=io('/',{ auth:{ username:myUsername } });
+socket.on('connect',()=>addSys('متصل بالخادم (id='+socket.id+')'));
+
+socket.on('room_joined', (data)=>{
+  currentRoom=data.roomId; roomOwner=data.owner;
+  addSys('انضممت الغرفة '+data.roomId); messagesEl.innerHTML=`أهلاً بك ${myUsername} في الغرفة ${data.roomId}`;
+  usersEl.innerHTML=''; if(data.members)data.members.forEach(u=>addUser(u.userId,u.username));
+  document.getElementById('roomControls').style.display=(roomOwner===myUsername)?'block':'none';
+});
+socket.on('room_locked', ()=>addSys('🔒 تم قفل الغرفة'));
+socket.on('room_unlocked', ()=>addSys('🔓 تم فتح الغرفة'));
+socket.on('kicked', ()=>{ alert('تم طردك من الغرفة'); leaveBtn.click(); });
+socket.on('user_joined', u=>{ addSys(u.username+' دخل الغرفة'); addUser(u.userId,u.username); });
+socket.on('user_left', u=>{ addSys(u.username+' غادر الغرفة'); removeUser(u.userId); });
+socket.on('new_message', m=>addMsg(m.senderName||m.senderId, m.text));
+socket.on('private_message', m=>{ const sender=m.fromId===socket.id?`${myUsername} (رسالة خاصة)`:`${m.fromName} (رسالة خاصة من)`; const d=document.createElement('div'); d.textContent=`${sender}: ${m.text}`; d.style.color='#d63384'; d.style.fontStyle='italic'; messagesEl.appendChild(d); messagesEl.scrollTop=messagesEl.scrollHeight; });
+
+// إرسال رسالة
+document.getElementById('sendBtn').onclick=sendMessage;
+document.getElementById('msg').addEventListener('keydown',(e)=>{ if(e.key==='Enter') sendMessage(); });
+function sendMessage(){ const txt=document.getElementById('msg').value.trim(); if(!currentRoom)return alert('انضم لغرفة أولاً'); if(!txt)return; socket.emit('send_message',{ roomId:currentRoom,text:txt }); document.getElementById('msg').value=''; }
+
+function addMsg(sender,text){ const d=document.createElement('div'); d.textContent=sender+': '+text; messagesEl.appendChild(d); messagesEl.scrollTop=messagesEl.scrollHeight; }
+function addSys(text){ const d=document.createElement('div'); d.textContent=text; d.className='sys'; messagesEl.appendChild(d); messagesEl.scrollTop=messagesEl.scrollHeight; }
+
+function addUser(id,name){ const el=document.createElement('div'); el.id='user_'+id; el.textContent=name; el.style.cursor='pointer'; el.style.padding='4px 6px'; el.style.borderRadius='4px';
+el.onclick=()=>{ const t=prompt('أدخل رسالة خاصة إلى '+name); if(t)socket.emit('private_message',{toSocketId:id,text:t}); };
+if(roomOwner===myUsername && name!==myUsername){ el.oncontextmenu=(e)=>{ e.preventDefault(); if(confirm(`طرد ${name} من الغرفة؟`)) socket.emit('kick_user',{roomId:currentRoom,targetId:id}); }; }
+usersEl.appendChild(el); }
+function removeUser(id){ const el=document.getElementById('user_'+id); if(el) el.remove(); }
+
+// إنشاء/انضمام/خروج من الغرفة
+joinBtn.onclick=()=>{ const room=document.getElementById('room').value; if(!room)return alert('أدخل اسم الغرفة'); socket.emit('join_room',{roomId:room}); createBtn.style.display='none'; joinBtn.style.display='none'; leaveBtn.style.display='inline-block'; }
+createBtn.onclick=()=>{ const name=document.getElementById('room').value||('room_'+Date.now()); socket.emit('create_room',{name}); createBtn.style.display='none'; joinBtn.style.display='none'; leaveBtn.style.display='inline-block'; }
+leaveBtn.onclick=()=>{ if(!currentRoom)return; socket.emit('leave_room',{roomId:currentRoom}); addSys('غادرت الغرفة '+currentRoom); createBtn.style.display='inline-block'; joinBtn.style.display='inline-block'; leaveBtn.style.display='none'; messagesEl.innerHTML=''; usersEl.innerHTML=''; currentRoom=null; }
+
+// قفل / فتح الغرفة
+document.getElementById('lockRoomBtn').onclick=()=>{ const pw=prompt('أدخل كلمة مرور للغرفة'); if(!pw)return; socket.emit('lock_room',{roomId:currentRoom,password:pw}); }
+document.getElementById('unlockRoomBtn').onclick=()=>{ socket.emit('unlock_room',{roomId:currentRoom}); }
+</script>
+</body>
+</html>

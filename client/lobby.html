@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<title>غرفة عامة - Lobby</title>
+<style>
+body{margin:0;font-family:'Segoe UI',sans-serif;background:#f4f6f8;}
+#container{display:flex;height:100vh;flex-direction:column;}
+#header{background:#1976d2;color:#fff;padding:10px 20px;display:flex;justify-content:space-between;align-items:center;}
+#header .title{font-size:18px;font-weight:bold;}
+#main{display:flex;flex:1;overflow:hidden;}
+#users{width:220px;background:#fff;border-left:1px solid #ddd;padding:10px;overflow-y:auto;}
+#users div{padding:6px 8px;margin-bottom:4px;border-radius:6px;display:flex;align-items:center;gap:8px;}
+#messagesContainer{flex:1;display:flex;flex-direction:column;padding:10px;background:#fdfdfd;overflow:hidden;}
+#messages{flex:1;overflow-y:auto;padding:10px;border-radius:8px;background:#fff;border:1px solid #ccc;}
+#msg-input{display:flex;gap:6px;margin-top:6px;}
+#msg{flex:1;padding:6px 10px;border-radius:6px;border:1px solid #ccc;outline:none;}
+#exitb,#sendBtn{background:#1976d2;color:#fff;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;}
+#exitb,#sendBtn:hover{background:#0d47a1;}
+.message-item img{width:32px;height:32px;border-radius:50%;}
+.message-item div{line-height:1.2;}
+</style>
+</head>
+<body>
+<div id="container">
+  <div id="header">
+    <div class="title">غرفة عامة - Lobby</div>
+    <div>👤 <span id="usernameDisplay"></span></div>
+      <button onclick="leave()" id="exitb" >خروج</button>
+  </div>
+
+  <div id="main">
+    <div id="messagesContainer">
+      <div id="messages"></div>
+      <div id="msg-input">
+        <input id="msg" placeholder="اكتب رسالتك هنا..."/>
+        <button id="sendBtn">أرسل</button>
+      </div>
+    </div>
+    <div id="users"></div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const username = sessionStorage.getItem('myUsername');
+const socket = io('/', { auth:{ username } ,reconnection:false });
+const messages = document.getElementById('messages');
+const users = document.getElementById('users');
+
+const currentUsers = new Set(); // لتتبع المستخدمين الحاليين
+
+function addUser(id, name){
+
+  if(currentUsers.has(id)) return; // ❌ يمنع التكرار
+  currentUsers.add(id);
+
+  const d = document.createElement('div');
+  d.id = 'u_'+id;
+  d.innerHTML = `
+    <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=90AFC5&color=FFFFFF&rounded=true"/>
+    <span>${name}</span>
+  `;
+  users.appendChild(d);
+}
+
+function removeUser(id){
+  currentUsers.delete(id);
+  const d=document.getElementById('u_'+id);
+  if(d) d.remove();
+}
+
+
+// --- عرض رسالة ---
+function msg(sender, text){
+  const d = document.createElement('div');
+  d.className = 'message-item';
+  d.style.display = 'flex';
+  d.style.alignItems = 'center';
+  d.style.marginBottom = '6px';
+
+  const img = document.createElement('img');
+  img.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(sender)}&background=90AFC5&color=FFFFFF&rounded=true`;
+
+  const textDiv = document.createElement('div');
+  textDiv.textContent = sender + ': ' + text;
+
+  d.appendChild(img);
+  d.appendChild(textDiv);
+  messages.appendChild(d);
+  messages.scrollTop = messages.scrollHeight;
+}
+document.getElementById('usernameDisplay').textContent = username ;
+// --- إرسال رسالة ---
+function sendMsg(){
+  const t = document.getElementById('msg').value.trim();
+  if(!t) return;
+  socket.emit('send_message', { roomId: 'lobby', text: t });
+  document.getElementById('msg').value = '';
+}
+document.getElementById('sendBtn').addEventListener('click', sendMsg);
+document.getElementById('msg').addEventListener('keydown', e => { if(e.key==='Enter') sendMsg(); });
+
+// --- استقبال الرسائل ---
+socket.on('new_message', m => msg(m.senderName, m.text));
+
+// --- استقبال المستخدمين في الغرفة ---
+socket.on('room_joined', data => {
+  users.innerHTML = '';
+  data.members.forEach(u => addUser(u.socketId, u.username));
+});
+
+// --- مستخدم انضم ---
+socket.on('user_joined', u => {
+  if (u.roomId !== 'lobby') return;
+  if (!document.getElementById('u_' + u.userId)) {
+  addUser(u.userId, u.username);
+  msg('نظام', `📌 ${u.username} دخل الغرفة`);
+}
+});
+
+// --- مستخدم خرج ---
+socket.on('user_left', u => {
+  removeUser(u.userId);
+  if (u.roomId !== 'lobby') return;
+  msg('نظام', `📌 ${u.username} غادر الغرفة`);
+});
+
+// --- الانضمام تلقائي للـ lobby عند الاتصال ---
+socket.emit('join_room', { roomId: 'lobby' });
+
+function leave(){
+  socket.emit('leave_room',{ roomId:'lobby'  });
+  socket.disconnect();
+  location.href='rooms.html';
+}
+</script>
+</body>
+</html>
