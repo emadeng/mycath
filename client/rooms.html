@@ -113,14 +113,13 @@ socket.on('rooms_list', rooms=>{
   // أرسل كلمة المرور مع join_room
  socket.emit('join_room', { roomId: room.name, password: password });
 // استمع لنجاح أو خطأ الدخول
- // socket.once('room_joined', () => {
+  socket.once('room_joined', () => {
     location.href='room.html'; // فقط عند النجاح
- // });
+ });
 
   socket.once('error_msg', msg => {
     alert(msg); // رسالة الخطأ
   });
-//location.href='room.html';
     };
     roomsList.appendChild(card);
   });
