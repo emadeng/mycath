@@ -198,7 +198,7 @@ socket.on('new_message', m => {
     msg(m.senderName, m.text, m.avatarUrl);
 });
 
-socket.on('private_message', m=> msg(m.avatarUrl,'(رسالة خاصة من ) '+m.fromName,m.text,'#d63384'));
+socket.on('private_message', m=> msgpv('(رسالة خاصة من ) '+m.fromName,m.text,'#d63384'));
 
 // ----- رسائل النظام -----
 
@@ -209,15 +209,14 @@ function sys(text){
   messages.appendChild(d);
   messages.scrollTop = messages.scrollHeight;
 }
-/*
-function msg(sender,text,color){
+function msgpv(sender,text,color){
   const d=document.createElement('div');
   d.textContent = sender+': '+text;
   if(color) d.style.color=color;
   messages.appendChild(d);
   messages.scrollTop = messages.scrollHeight;
 }
-*/
+
 function msg(sender, text, avatarUrl, color) {
     const d = document.createElement('div');
     d.className = 'message-item';
